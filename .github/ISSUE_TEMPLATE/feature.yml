@@ -1,0 +1,15 @@
+name: Feature or improvement
+description: Track a wallet improvement
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the workflow and what should improve. Do not include financial records or credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What should be demonstrated before this is complete?

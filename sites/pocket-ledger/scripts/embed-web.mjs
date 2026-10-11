@@ -1,0 +1,11 @@
+import {readFile,writeFile,readdir,mkdir} from 'node:fs/promises';
+import {resolve,relative,extname} from 'node:path';
+const root=resolve(import.meta.dirname,'..'), web=resolve(root,'../../dist-web');
+const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json','.webmanifest':'application/manifest+json','.png':'image/png','.svg':'image/svg+xml','.ico':'image/x-icon','.ttf':'font/ttf','.woff2':'font/woff2'};
+const assets={};
+async function walk(dir){for(const item of await readdir(dir,{withFileTypes:true})){const path=resolve(dir,item.name);if(item.isDirectory())await walk(path);else{if(/\.(xlsx|csv|sqlite|db)$/i.test(item.name)||/^(import|migration|backup).*\.json$/i.test(item.name))throw new Error('Private data must not be embedded');assets['/'+relative(web,path).replaceAll('\\','/')]={type:types[extname(path)]??'application/octet-stream',bytes:(await readFile(path)).toString('base64')};}}}
+await walk(web);if(!assets['/index.html'])throw new Error('Export Expo web before embedding');
+const api=(await readFile(resolve(root,'worker/api.mjs'),'utf8')).replace('export async function handleApi','async function handleApi');
+const server=`\nconst assets=${JSON.stringify(assets)};\nexport default {async fetch(request,env){const api=await handleApi(request,env);if(api)return api;const url=new URL(request.url);if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Method not allowed',{status:405});const asset=assets[url.pathname]??(!url.pathname.split('/').pop().includes('.')?assets['/index.html']:null);if(!asset)return new Response('Not found',{status:404});const bytes=Uint8Array.from(atob(asset.bytes),c=>c.charCodeAt(0));return new Response(request.method==='HEAD'?null:bytes,{headers:{'content-type':asset.type,'cache-control':url.pathname==='/sw.js'||asset.type.startsWith('text/html')?'no-cache':'public, max-age=3600','x-content-type-options':'nosniff'}});}};\n`;
+await mkdir(resolve(root,'worker'),{recursive:true});await writeFile(resolve(root,'worker/index.js'),api+server);
+console.log(`Embedded ${Object.keys(assets).length} application assets (no financial records).`);

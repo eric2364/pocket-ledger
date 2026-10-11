@@ -1,0 +1,16 @@
+name: Bug
+description: Record a problem without sharing private finances
+body:
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Use invented amounts, names and descriptions.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behaviour
+    validations:
+      required: true

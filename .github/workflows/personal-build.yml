@@ -1,0 +1,42 @@
+name: Build for my phone
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Phone platform (iOS needs an existing device provisioning profile)
+        required: true
+        type: choice
+        options:
+          - android
+          - ios
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Check Expo credentials
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "Add the EXPO_TOKEN repository secret after completing docs/INSTALL.md."
+            exit 1
+          fi
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          packager: npm
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Build personal install package
+        env:
+          PHONE_PLATFORM: ${{ inputs.platform }}
+        run: eas build --platform "$PHONE_PLATFORM" --profile personal --non-interactive
