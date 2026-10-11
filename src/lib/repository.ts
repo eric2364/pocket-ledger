@@ -70,3 +70,7 @@ export async function acceptRemoteBatch(records:{id:string;entity:string;payload
   for(const record of records){const local=await tx.getFirstAsync<{state:string}>('SELECT state FROM records WHERE id=?',record.id);if(local&&local.state!=='synced')continue;await tx.runAsync('INSERT INTO records(id,entity,payload,version,state) VALUES(?,?,?,?,\'synced\') ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,version=excluded.version,state=excluded.state',record.id,record.entity,JSON.stringify(record.payload),record.version);}
  });
 }
+
+export async function redactSummaryCache(){
+ const {isProtectedSummary}=await import('../summaryAccess');const snapshot=await exportBackup();await(await db()).withExclusiveTransactionAsync(async tx=>{for(const row of snapshot.records){if(row.state==='synced'&&isProtectedSummary(row.entity,JSON.parse(row.payload)))await tx.runAsync('UPDATE records SET payload=? WHERE id=?',JSON.stringify({id:row.id,lockedSummary:true}),row.id);}});
+}

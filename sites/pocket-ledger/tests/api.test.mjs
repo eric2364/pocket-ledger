@@ -6,6 +6,7 @@ import {handleApi} from '../worker/api.mjs';
 
 function fixture(){
   const sqlite=new DatabaseSync(':memory:');sqlite.exec(readFileSync(new URL('../drizzle/0000_wallet.sql',import.meta.url),'utf8'));
+  sqlite.exec(readFileSync(new URL('../drizzle/0001_summary_security.sql',import.meta.url),'utf8'));
   const DB={prepare(sql){let params=[];return {bind(...values){params=values;return this;},async first(){return sqlite.prepare(sql).get(...params)??null;},async all(){return {results:sqlite.prepare(sql).all(...params)};},async run(){const output=sqlite.prepare(sql).run(...params);return {meta:{changes:Number(output.changes)}};}};},async batch(statements){sqlite.exec('BEGIN');try{const result=[];for(const stmt of statements)result.push(await stmt.run());sqlite.exec('COMMIT');return result;}catch(error){sqlite.exec('ROLLBACK');throw error;}}};
   const objects=new Map();const BUCKET={async head(key){return objects.get(key)??null;},async put(key,bytes,options){objects.set(key,{key,bytes,size:bytes.byteLength,uploaded:new Date(),httpMetadata:options.httpMetadata});},async get(key){const object=objects.get(key);return object?{...object,body:object.bytes}:null;},async list(){return {objects:[...objects.values()],truncated:false};}};
   return {DB,BUCKET,sqlite};
@@ -42,10 +43,11 @@ test('invalid writes and cross-origin writes do not change stored records',async
 test('archives preserve original bytes and reject traversal names',async()=>{
   const env=fixture();const bytes=new Uint8Array([80,75,0,255]);
   const uploaded=await handleApi(new Request('https://wallet.example/api/archive?name=source.xlsx',{method:'POST',body:bytes}),env);assert.equal(uploaded.status,200);
-  const object=await request(env,'/api/archive?name=source.xlsx');assert.deepEqual(new Uint8Array(await object.arrayBuffer()),bytes);
+  await request(env,'/api/summary/setup','POST',{password:'test password 123'});
+  const object=await request(env,'/api/archive?name=source.xlsx','GET',undefined,true,{'x-summary-password':'test password 123'});assert.deepEqual(new Uint8Array(await object.arrayBuffer()),bytes);
   assert.equal((await request(env,'/api/archive?name=..%2Fsource.xlsx')).status,400);
   await request(env,'/api/sync','POST',{records:[tx()]});
-  const backup=await(await request(env,'/api/backup')).json();assert.equal(backup.archives[0].name,'source.xlsx');
+  const backup=await(await request(env,'/api/backup','GET',undefined,true,{'x-summary-password':'test password 123'})).json();assert.equal(backup.archives[0].name,'source.xlsx');
   assert.equal(backup.backupVersion,1);assert.deepEqual(backup.settings,[]);assert.deepEqual(backup.conflicts,[]);
   assert.equal(typeof backup.records[0].payload,'string');assert.equal(backup.records[0].state,'synced');assert.equal(JSON.parse(backup.records[0].payload).amountMinor,12000);
 });
@@ -60,4 +62,34 @@ test('incremental checkpoint catches changes made behind a pagination cursor on 
   const replay=await(await request(env,'/api/records?since='+later+'&until='+later)).json();assert.equal(replay.records.length,1);
   assert.equal((await request(env,'/api/records?since=invalid')).status,400);
   assert.equal((await request(env,'/api/records?since='+later+'&until='+checkpoint)).status,400);
+});
+
+test('summary password encrypts data at rest and generic endpoints cannot bypass the lock',async()=>{
+ const env=fixture(),secret={id:'saving-1',entity:'module',payload:{id:'saving-1',type:'saving',title:'Secret account',fields:{balance:998877}},version:0};
+ await request(env,'/api/import','POST',{records:[secret,tx()]},false);
+ let page=await(await request(env,'/api/records')).json();assert.equal(page.records.find(r=>r.id===secret.id).payload.lockedSummary,true);assert.equal(JSON.stringify(page).includes('998877'),false);
+ assert.equal((await request(env,'/api/backup')).status,423);assert.equal((await request(env,'/api/summary/setup','POST',{password:'short'})).status,400);
+ const setup=await(await request(env,'/api/summary/setup','POST',{password:'strong personal password'})).json();assert.equal(setup.records[0].payload.fields.balance,998877);
+ const stored=env.sqlite.prepare('SELECT payload FROM wallet_records WHERE id=?').get(secret.id).payload;assert.equal(stored.includes('998877'),false);assert.equal(stored.includes('Secret account'),false);assert.equal(JSON.parse(stored).encryptedSummary,1);
+ assert.equal((await request(env,'/api/summary/unlock','POST',{password:'wrong password'})).status,403);
+ const unlock=await(await request(env,'/api/summary/unlock','POST',{password:'strong personal password'})).json();assert.deepEqual(unlock.records[0].payload,secret.payload);
+ assert.equal((await request(env,'/api/summary/setup','POST',{password:'another strong password'})).status,409);
+ assert.equal((await request(env,'/api/sync','POST',{records:[secret]})).status,403);
+ assert.equal((await request(env,'/api/sync','POST',{records:[tx(secret.id,2)]})).status,403);
+ assert.equal((await request(env,'/api/import','POST',{records:[{...secret,id:'new-secret'}]},false)).status,403);
+ assert.equal((await request(env,'/api/import','POST',{records:[secret]},false)).status,200);
+ assert.equal((await request(env,'/api/backup','GET',undefined,true,{'x-summary-password':'bad'})).status,403);
+ const backup=await(await request(env,'/api/backup','GET',undefined,true,{'x-summary-password':'strong personal password'})).json();assert.equal(JSON.parse(backup.records.find(r=>r.id===secret.id).payload).fields.balance,998877);
+ assert.equal((await request(env,'/api/summary/status','GET',undefined,false)).status,401);
+});
+test('summary encryption handles realistic row volume, large baselines and annual reviews atomically',async()=>{
+ const env=fixture(),records=Array.from({length:580},(_,i)=>({id:'protected-'+i,entity:'module',payload:{id:'protected-'+i,type:'expense-summary',fields:{value:i}},version:0}));
+ records.push({id:'baseline',entity:'module',payload:{id:'baseline',type:'reconciliation',fields:{entries:Array.from({length:12000},(_,i)=>({id:i,amount:12345}))}},version:0});
+ records.push({id:'annual-review',entity:'review',payload:{id:'annual-review',sourceSheet:'2026_Expense',originalValue:'sensitive annual info'},version:0});
+ await request(env,'/api/import','POST',{records},false);
+ const setup=await request(env,'/api/summary/setup','POST',{password:'large dataset password'});assert.equal(setup.status,200);const data=await setup.json();assert.equal(data.protectedRecords,582);assert.equal(data.records.find(r=>r.id==='baseline').payload.fields.entries.length,12000);
+ const list=await(await request(env,'/api/records')).json();assert.equal(JSON.stringify(list).includes('sensitive annual info'),false);assert.equal(list.records.find(r=>r.id==='annual-review').payload.lockedSummary,true);
+ const row=env.sqlite.prepare('SELECT payload FROM wallet_records WHERE id=?').get('baseline'),payload=JSON.parse(row.payload);payload.ciphertext=payload.ciphertext.slice(0,-4)+'AAAA';env.sqlite.prepare('UPDATE wallet_records SET payload=? WHERE id=?').run(JSON.stringify(payload),'baseline');
+ assert.equal((await request(env,'/api/summary/unlock','POST',{password:'large dataset password'})).status,500);
+ assert.equal((await request(env,'/api/archive?name=unknown.xlsx')).status,423);
 });

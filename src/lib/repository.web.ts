@@ -70,3 +70,11 @@ export async function acceptRemoteBatch(records:{id:string;entity:string;payload
  for(const record of records){const req=store.get(record.id);req.onsuccess=()=>{if(!req.result||req.result.state==='synced')store.put({...record,payload:JSON.stringify(record.payload),state:'synced'});};}
  await finished;
 }
+
+/** Remove clear summary copies retained by older app versions. */
+export async function redactSummaryCache(){
+ const {isProtectedSummary}=await import('../summaryAccess');
+ const snapshot=await exportBackup();const tx=(await db()).transaction(['records','conflicts'],'readwrite'),finished=done(tx);
+ for(const row of snapshot.records){const p=JSON.parse(row.payload);if(row.state==='synced'&&isProtectedSummary(row.entity,p))tx.objectStore('records').put({...row,payload:JSON.stringify({id:row.id,lockedSummary:true}),state:'synced'});}
+ await finished;
+}

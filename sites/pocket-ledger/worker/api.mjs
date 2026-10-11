@@ -1,3 +1,4 @@
+import {isProtected,lockedRecord,securityConfig,authorizeSummary,setupSummary,summaryRecords,rejectProtectedWrite} from './summary-security.mjs';
 // This API is supported ONLY behind a confirmed owner-private Sites boundary.
 // Dispatch authenticates visitors and consumes service credentials before routing.
 const ENTITIES = new Set(['transaction','module','template','category','historical','review','source']);
@@ -51,6 +52,14 @@ export async function handleApi(request,env){
     if(!user&&!serviceWrite)return json({error:'Sign in with ChatGPT'},401);
     if(request.method!=='GET')requireSameOrigin(request);
     if(path==='/api/session'&&request.method==='GET')return json({authenticated:true});
+    if(path==='/api/summary/status'&&request.method==='GET')return json({configured:!!await securityConfig(env.DB)});
+    if(path==='/api/summary/setup'&&request.method==='POST'){
+      const body=await readJSON(request,4096);if(body.confirm!==undefined&&body.confirm!==body.password)return json({error:'Passwords do not match'},400);
+      const status=await setupSummary(env.DB,body.password);const key=await authorizeSummary(env.DB,body.password);return json({...status,records:await summaryRecords(env.DB,key)});
+    }
+    if(path==='/api/summary/unlock'&&request.method==='POST'){
+      const body=await readJSON(request,4096);const key=await authorizeSummary(env.DB,body.password);return json({records:await summaryRecords(env.DB,key)});
+    }
     if(path==='/api/records'&&request.method==='GET'){
       const after=url.searchParams.get('after')??'',limit=500;
       if(after.length>512)return json({error:'Invalid cursor'},400);
@@ -60,22 +69,31 @@ export async function handleApi(request,env){
       const query=since?'SELECT id,entity,payload,version FROM wallet_records WHERE id>? AND updated_at>=? AND updated_at<=? ORDER BY id LIMIT ?':'SELECT id,entity,payload,version FROM wallet_records WHERE id>? AND updated_at<=? ORDER BY id LIMIT ?';
       const {results}=await env.DB.prepare(query).bind(...(since?[after,since,checkpoint,limit+1]:[after,checkpoint,limit+1])).all();
       const page=results.slice(0,limit);
-      return json({records:page.map(unpack),nextCursor:results.length>limit?page.at(-1).id:null,checkpoint});
+      return json({records:page.map(row=>lockedRecord(unpack(row))),nextCursor:results.length>limit?page.at(-1).id:null,checkpoint});
     }
     if(path==='/api/sync'&&request.method==='POST'){
       const body=await readJSON(request,4*1024*1024);if(!Array.isArray(body.records)||body.records.length>100)return json({error:'Send at most 100 records'},400);
       body.records.forEach(validate);
+      for(const record of body.records)await rejectProtectedWrite(env.DB,record);
       const results=[];for(const record of body.records)results.push(await saveRecord(env.DB,record));
       return json({results});
     }
     if(path==='/api/import'&&request.method==='POST'){
       const records=importRecords(await readJSON(request));records.forEach(validate);
+      const configured=await securityConfig(env.DB);
+      if(configured)for(const record of records)if(isProtected(record)){
+        const existing=await env.DB.prepare('SELECT id FROM wallet_records WHERE id=?').bind(record.id).first();
+        if(!existing)return json({error:'New Summary imports require a protected migration'},403);
+      }
+      // Existing protected IDs cannot be replaced or recast via imports.
+      for(const record of records)if(!isProtected(record))await rejectProtectedWrite(env.DB,record);
       let inserted=0;for(let i=0;i<records.length;i+=50){const batch=records.slice(i,i+50).map(validate).map(r=>env.DB.prepare('INSERT OR IGNORE INTO wallet_records(id,entity,payload,version,updated_at) VALUES(?,?,?,1,?)').bind(r.id,r.entity,r.payload,new Date().toISOString()));const results=await env.DB.batch(batch);for(const result of results)inserted+=result.meta?.changes??0;}
       return json({received:records.length,inserted,retainedExisting:records.length-inserted});
     }
     if(path==='/api/backup'&&request.method==='GET'){
+      const summaryKey=await authorizeSummary(env.DB,request.headers.get('x-summary-password'));const decrypted=new Map((await summaryRecords(env.DB,summaryKey)).map(r=>[r.id,r]));
       const {results}=await env.DB.prepare('SELECT id,entity,payload,version FROM wallet_records ORDER BY id').all();
-      return json({backupVersion:1,createdAt:new Date().toISOString(),records:results.map(row=>({...row,state:'synced'})),settings:[],conflicts:[],archives:await archiveList(env.BUCKET)},200,{'content-disposition':'attachment; filename="wallet-cloud-backup.json"'});
+      return json({backupVersion:1,createdAt:new Date().toISOString(),records:results.map(row=>({...row,payload:decrypted.has(row.id)?JSON.stringify(decrypted.get(row.id).payload):row.payload,state:'synced'})),settings:[],conflicts:[],archives:await archiveList(env.BUCKET)},200,{'content-disposition':'attachment; filename="wallet-cloud-backup.json"'});
     }
     if(path==='/api/archive'){
       if(request.method==='GET'&&!url.searchParams.has('name'))return json({archives:await archiveList(env.BUCKET)});
@@ -87,7 +105,7 @@ export async function handleApi(request,env){
         await env.BUCKET.put(key,bytes,{httpMetadata:{contentType:request.headers.get('content-type')??'application/octet-stream'}});
         return json({name,size:bytes.byteLength});
       }
-      if(request.method==='GET'){const object=await env.BUCKET.get(key);if(!object)return json({error:'Archive not found'},404);return new Response(object.body,{headers:{'content-type':object.httpMetadata?.contentType??'application/octet-stream','content-disposition':`attachment; filename="${name}"`,'cache-control':'private, no-store'}});}
+      if(request.method==='GET'){await authorizeSummary(env.DB,request.headers.get('x-summary-password'));const object=await env.BUCKET.get(key);if(!object)return json({error:'Archive not found'},404);return new Response(object.body,{headers:{'content-type':object.httpMetadata?.contentType??'application/octet-stream','content-disposition':`attachment; filename="${name}"`,'cache-control':'private, no-store'}});}
     }
     return json({error:'Route or method not found'},404);
   }catch(error){return json({error:error.status?error.message:'Cloud request failed'},error.status??500);}
