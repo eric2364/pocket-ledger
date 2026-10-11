@@ -1,0 +1,3 @@
+[functions.wallet-summary]
+# The function verifies every access token with Auth getUser, including modern signing keys.
+verify_jwt = false

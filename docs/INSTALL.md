@@ -1,30 +1,28 @@
 # Install on your iPhone
 
-Your chosen installation is Safari **Add to Home Screen**. No Apple Developer membership or computer is needed to use the deployed app.
-
-1. Open [Pocket Ledger](https://pocket-ledger-eric2364.hazymoose33.chatgpt.site) in **Safari** on your iPhone.
-2. Sign in with the same ChatGPT account that owns this project if prompted. The site is private to that account.
+1. Open [Pocket Ledger](https://eric2364.github.io/pocket-ledger/) in **Safari**.
+2. Sign in using the same Supabase email and password as your weight-check app. ChatGPT sign-in is unnecessary. Each app stores its records separately.
 3. Tap **Share → Add to Home Screen → Add**.
-4. Open the new icon. On first launch, keep an internet connection while your existing records download. The status should become **Synced**.
-5. Add an expense once. Reports update from that record; no second Excel entry is needed. Use **History → Export CSV** when you want data in Excel.
+4. Open the new icon while online and wait for **Synced** before checking your existing records.
+5. Add a transaction once. Reports update automatically; use **History → Export CSV** when you need Excel-compatible data.
+6. Open **Summary**, create its separate password if prompted, and unlock annual summaries, monthly reconciliation and original-file downloads.
 
-The deployed version uses a private Cloudflare D1 database and R2 file archive through Sites. Supabase setup is unnecessary for this version. Original workbook files and migration archives are separate from application code. Settings provides cloud synchronization. Unlock Summary to access complete exports, backups and original-file downloads.
+GitHub Pages serves public application code. Personal records are stored in a private Supabase database and private file bucket, protected by authentication and ownership policies. No financial records, workbooks or credentials belong in the repository or static website files.
 
-The app caches its interface and keeps records in IndexedDB for offline entry after an initial online launch. Reconnect to synchronize. Clearing Safari/site data or removing the app can remove local records; synchronize and export a backup first. If authentication expires, reconnect and sign in again.
+The app keeps records on your phone for offline entry after an initial online launch. Reconnect to synchronize. Signing out hides the wallet and locks Summary. Device records remain saved to avoid losing unsynchronized entries; the wallet stays bound to its original account. Synchronize and export a complete backup before clearing Safari data or removing the app.
 
 ## Check on your phone
 
-Safari installation and these physical-device checks still need your phone:
+- Wait for **Synced**, find an existing transaction and inspect September reconciliation in Summary.
+- Add an invented expense, close and reopen the app, and confirm it appears once.
+- Try an offline entry, reconnect and check synchronization.
+- Export CSV and a complete backup to Files, then delete the invented entry.
+- Sign out and confirm the sign-in screen hides your wallet.
 
-- Wait for **Synced**, find an existing transaction and unlock Summary and open an original archive.
-- Add an invented small expense, close/reopen the app, and confirm it appears once.
-- After the initial online launch, try an offline entry, reconnect, and confirm synchronization.
-- Export CSV and a full backup to Files, then delete the invented entry.
+Automated and desktop checks do not replace installation and sharing checks on your physical iPhone.
 
-Automated checks and desktop browser checks passed; they do not establish that installation, offline caching or file sharing has been verified on your iPhone.
+## Developer builds
 
-## Developer alternatives
+Use `npm ci`, `npm run typecheck` and `npm test` locally. Build with `EXPO_PUBLIC_BASE_PATH=/pocket-ledger`, `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY`, then `npm run export:web`. The key must be a publishable or legacy anon key, never an administrative key. The Pages workflow uses repository variables `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
 
-For local work, run `npm ci`, `npm run typecheck`, `npm test`, then `npm run web`. Build the installable web assets with `npm run export:web`. Hosting source and tests are in `sites/pocket-ledger`; preserve the current private access policy when updating the deployment.
-
-The optional Supabase backend is documented in [SUPABASE.md](SUPABASE.md). Native EAS profiles remain in `eas.json`; signed iPhone ad hoc distribution requires an Expo project, Apple signing and a registered device. They have not been provisioned and are not needed for the selected Safari route. Never include financial archives in source or build uploads.
+Native signing is unnecessary for this Safari installation. Existing native EAS profiles and the earlier Sites implementation remain available for development, but neither is the current iPhone hosting path.

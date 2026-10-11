@@ -23,3 +23,7 @@ Receipt OCR, bank-statement matching, scheduled push reminders, favourites and d
 ## Data boundary
 
 This repository contains application source and synthetic tests only. Personal workbook files, imported records, migration reports, source hashes, archive inventories, cloud database contents, credentials and deployment bundles are excluded. The upload uses a fresh GitHub history so local commits containing private migration statistics are not published.
+
+## Independent iPhone hosting
+
+Migrated frontend support to GitHub Pages and private Supabase storage. Preserves separate Summary encryption, protected archives, offline entry, conflict handling, reconciliation and CSV/backup exports. Source releases exclude financial records and original local history. Live deployment and migration verification are recorded after checks complete.

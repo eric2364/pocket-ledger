@@ -1,29 +1,27 @@
-# Personal cloud setup
+# Private cloud storage
 
-The app works locally before cloud setup. Cloud storage has not been deployed automatically: it needs your own Supabase project.
+The current iPhone app uses GitHub Pages for public code and Supabase for private data. It shares the Supabase authentication project with the weight-check app; sign in with the same email and password. Wallet tables and its file bucket remain separate from that app's records.
 
-1. Create a Supabase project in your preferred region.
-2. Run `supabase/migrations/202610110001_wallet.sql` once through the SQL Editor, or apply it with the Supabase CLI. It creates private per-user wallet records, the conflict-checking save function and the private `wallet-private` file bucket.
-3. In the app's Settings, enter the project's HTTPS URL and **publishable key** (or legacy anon key). Never use a secret or service-role key. Build-time environment variables are not required.
-4. Create an account in the app. If email confirmation is enabled, confirm the email before signing in. The app uses email/password sign-in and does not require a browser redirect.
-5. Import your migration JSON and tap Sync. The app uploads transactions, categories, modules, historical summaries, review records, source metadata and recurring templates. Import source archive files through the app's private file upload feature if exposed by your build.
+The production build supplies the project URL and publishable/anon key automatically. These are public connection settings, not administrative credentials. Authentication and server-side ownership policies protect the records. Never put a secret or service-role key in browser code, environment variables beginning `EXPO_PUBLIC_`, or GitHub.
 
-## Storage and synchronization
+## Backend deployment
 
-Native iOS stores local records in SQLite and authentication tokens in SecureStore. The installed web app uses IndexedDB for records and browser localStorage for its session/configuration. Passwords are sent to Supabase only during sign-in and never persisted by the app. Keep the installed web app on a trusted device, use HTTPS, and export backups: a browser can evict local data even when persistence is requested.
+Apply the SQL migrations under `supabase/migrations` in order. Deploy the `wallet-summary` Edge Function from `supabase/functions/wallet-summary`. Its administrative credential lives only in Supabase's server environment. Summary encryption uses Web Crypto AES-GCM and a password-derived key; the function verifies the signed-in user before every action.
 
-Each local record has a stable ID, server version and visible synchronization status. The save RPC checks the expected version and serializes concurrent writes. Identical retried requests succeed without duplicate records. If another device has changed the same record, both versions are retained in local conflict storage; the app does not silently overwrite either. A concurrent local edit during upload remains pending. Synchronization covers all records, including those above the default server pagination limit. Device settings such as last-selected category remain local.
+Ordinary synchronization calls `save_wallet_record`, which validates the expected server version and rejects protected Summary writes. Downloads use the ownership-filtered `wallet_records_safe` view, which returns placeholders for protected records. Direct reads of the underlying table and direct downloads from the private archive bucket are denied. The Summary function lists archive metadata and requires the separate Summary password before returning protected records, a cloud backup or original file bytes.
 
-A wallet binds to the first account it synchronizes with. The app blocks syncing the same local wallet to a different user or changing a bound cloud project, preventing accidental mixing of private records. Switching accounts requires a separate wallet/reset flow with backup first.
+For a source-only deployment, configure GitHub repository variables `SUPABASE_URL` and `SUPABASE_ANON_KEY`, enable Pages from GitHub Actions and run the Pages workflow. Do not upload migration payloads, databases, workbook files, private screenshots or financial histories to GitHub.
 
-Original workbook files are stored in the private bucket using a path beginning with your authenticated user ID. Downloads use short-lived signed URLs. Database row policies and file object policies only permit your own user. The mutation RPC derives user identity from the authenticated session, never a user ID supplied by the client.
+## Synchronization and device storage
 
-## Preservation and backups
+The web app stores ordinary records in IndexedDB and its Supabase session in browser storage. Login and Summary passwords are not persisted by app code. Native builds use SQLite for records and SecureStore for authentication tokens. Keep the app on a trusted phone.
 
-The original workbook remains on your computer. Its source hash and original cells are preserved by the migration importer. Repeating the same source import is a no-op; overlapping stable IDs preserve existing records. Soft deletion is reversible. Cloud deletion also retains a tombstone record, so it can propagate to other devices without resurrecting a transaction.
+Stable record IDs and server versions prevent duplicate retried entries. Concurrent edits retain both versions for review. Downloads paginate through all records, and pending local edits survive cloud refresh. The device wallet binds to the first synchronized account and rejects other users to prevent accidental mixing. Signing out clears visible wallet state and locks Summary without discarding pending local entries.
 
-Download CSVs for analysis and the complete JSON backup for restoration. Back up the database and uploaded files separately: a database backup does not include actual Storage file bytes. A complete archive should contain the original workbook, migration data, current app backup and attached files. Keep at least one copy outside Supabase.
+## Preservation and exports
 
-## Deployment verification
+Original workbook files and cell archives remain private and unchanged. Mobile records preserve reporting periods, source references and unresolved review items. Summary source snapshots are read-only; current transactions drive reports and CSV exports.
 
-Before treating cloud setup as complete, verify with two separate test users that one cannot list the other's wallet records or private file paths. Then edit a test record independently on two devices and synchronize both: one should become a preserved conflict. Also simulate a lost response/retry and verify that the record ID appears only once. These checks require a live project and have not been run without your credentials.
+Use **Summary → Download complete app backup** to include local records, pending edits, local settings, conflicts and unlocked summary records. A cloud-only backup contains the current cloud records in the same restorable JSON format, with empty device settings and conflicts. CSV export produces Excel-compatible tables; backups preserve the full record payloads. Archive files are downloaded separately because database backups do not contain Storage file bytes.
+
+Keep a backup outside Supabase. A forgotten Summary password cannot decrypt protected records; retain the original workbook privately.

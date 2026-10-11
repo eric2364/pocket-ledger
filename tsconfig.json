@@ -2,7 +2,16 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
-    "types": ["node", "react"]
+    "types": [
+      "node",
+      "react"
+    ]
   },
-  "exclude": ["node_modules", "sites", "dist", "dist-web"]
+  "exclude": [
+    "node_modules",
+    "sites",
+    "dist",
+    "dist-web",
+    "supabase/functions"
+  ]
 }

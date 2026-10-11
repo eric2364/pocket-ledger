@@ -13,7 +13,7 @@ npm test
 npx expo start
 ```
 
-Open your deployed private Site URL. On your iPhone, open it in Safari, sign in with the owner’s ChatGPT account, then choose Share → Add to Home Screen. Follow [phone installation](docs/INSTALL.md) for first-launch and device checks. Cloud records use private D1/R2 storage; no Supabase setup is needed for this deployment.
+Install [Pocket Ledger](https://eric2364.github.io/pocket-ledger/) through Safari → Share → Add to Home Screen. Sign in with your existing Supabase account, as used by the weight-check app. [Phone installation](docs/INSTALL.md) covers setup and device checks. GitHub Pages serves public code; Supabase stores private records. Summary and original-file downloads require an additional password.
 
 ## Project records
 
@@ -23,4 +23,4 @@ Open your deployed private Site URL. On your iPhone, open it in Safari, sign in 
 - [Preserve and import workbook history](docs/MIGRATION.md)
 - [Connect private Supabase storage and synchronization](docs/SUPABASE.md)
 
-Local tests and production exports passed. GitHub workflows validate source and bundles. Financial history stays outside source, GitHub and static bundles. Keep backups before uninstalling or changing accounts.
+Local tests and production exports can be checked with the commands above. Source-only GitHub publication is available at [pocket-ledger](https://github.com/eric2364/pocket-ledger). The published copy uses sanitized documentation and fresh history; this original workspace history must not be pushed. Inspect the Pages workflow for deployment status. Financial history stays outside source, GitHub and static bundles. Keep backups before uninstalling or changing accounts.
