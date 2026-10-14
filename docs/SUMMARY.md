@@ -15,3 +15,9 @@ Set a password before relying on encryption at rest: existing summary rows remai
 Older synchronized summary caches are redacted. Unsynchronized local edits are retained for recovery, hidden from ordinary views and excluded from generic sync. Complete app backup after unlocking preserves those local edits. They are not automatically merged into read-only original summary snapshots.
 
 Generated reconciliation payloads, source audits, screenshots and financial values remain under private/ and never enter GitHub. Source-only updates retain the established sanitized publication boundary.
+
+## Horizontal comparisons
+
+Summary opens with **Yearly comparison**: choose an ending year and 1–10 years. Years run left to right; income, expenses, net saving and categories run down the rows. **Monthly salary** allows an ending month and 1–36 months, with selectable income categories so salary is not confused with unrelated income. These tables scroll sideways while row labels remain visible. **Year details** retains the individual-year reports and original workbook references.
+
+Comparisons use the same saved transactions and recorded HKD equivalents as existing reports. No new transactions or automatic currency conversions are created. Annual adjustments remain in year totals; undated annual items are not assigned to a fabricated month. Zero amounts appear as an accounting dash; missing recorded HKD amounts are explicitly flagged.

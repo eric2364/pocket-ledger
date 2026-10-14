@@ -5,10 +5,12 @@ import {report,reportHkd} from './lib/domain';
 import {formatAccounting} from './lib/accounting';
 import {Button,Chip,useUI} from './ui';
 import {PeriodPicker} from './PeriodPicker';
+import {SummaryComparison} from './SummaryComparison';
 const money=(n:number)=>`HKD ${formatAccounting(n)}`;
 const display=(v:unknown)=>v===null||v===undefined?'':typeof v==='object'?JSON.stringify(v):String(v);
 export function Summary({transactions,records,historical,onLock,extra}:{transactions:Transaction[];records:ModuleRecord[];historical:Record<string,unknown>[];reviews:Record<string,unknown>[];onLock:()=>void;extra?:React.ReactNode}){
  const {colors,ui}=useUI();
+ const [view,setView]=useState<'year'|'salary'|'detail'>('year');
  const years=[...new Set([...transactions.map(t=>t.reportingPeriod.slice(0,4)),...historical.map(h=>String(h.year||''))])].filter(y=>/^\d{4}$/.test(y)).sort().reverse();
  const [year,setYear]=useState(years[0]||String(new Date().getFullYear())),[detail,setDetail]=useState(''),[limit,setLimit]=useState(30),[showOriginal,setShowOriginal]=useState(false);
  const annual=useMemo(()=>reportHkd(transactions,year),[transactions,year]);
@@ -25,7 +27,9 @@ export function Summary({transactions,records,historical,onLock,extra}:{transact
  const originalRows=historical.filter(h=>String(h.year)===year&&h.sourceSheet==='Saving');
  const detailRows=records.filter(r=>r.type===detail);
  return <ScrollView contentContainerStyle={ui.content}>
-  <View style={ui.row}><Text style={ui.title}>Annual summary</Text><Button title="Lock" secondary onPress={onLock}/></View>
+  <View style={ui.row}><Text style={ui.title}>Summary</Text><Button title="Lock" secondary onPress={onLock}/></View>
+  <View style={ui.wrap}>{([['year','Yearly comparison'],['salary','Monthly salary'],['detail','Year details']] as const).map(([key,label])=><Chip key={key} title={label} active={view===key} onPress={()=>setView(key)}/>)}</View>
+  {view!=='detail'?<SummaryComparison key={view} transactions={transactions} mode={view}/>:<>
   <PeriodPicker label="Summary year" value={year} onChange={value=>{setYear(value);setDetail('');setLimit(30);}} periods={years} allowMonthly={false} allowAll={false}/>
   <View style={[ui.card,{backgroundColor:colors.green,borderColor:colors.green}]}>
    <Text style={[ui.label,{color:colors.onAccent}]}>NET SAVING · {year}</Text><Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={[ui.amount,numeric,{color:colors.onAccent}]}>{money(annual.netMinor)}</Text>
@@ -46,6 +50,7 @@ export function Summary({transactions,records,historical,onLock,extra}:{transact
    {detail&&detailRows.slice(0,limit).map(row=><View key={row.id} style={{gap:5,borderTopWidth:1,borderColor:colors.border,paddingTop:10}}><Text style={ui.heading}>{row.title}</Text><Text style={ui.muted}>{row.sourceSheet}</Text>{Array.isArray(row.fields.cells)&&row.fields.cells.map((cell:any)=><Text key={cell.reference} style={ui.body}>{cell.reference}: {display(cell.cachedValue??cell.value)}</Text>)}</View>)}
    {detail&&detailRows.length>limit&&<Button title="Show more original rows" secondary onPress={()=>setLimit(limit+30)}/>} {detail&&detailRows.length===0&&<Text style={ui.muted}>No original rows for this selection.</Text>}
   </>}</View>
+  </>}
   {extra}
  </ScrollView>;
 }
