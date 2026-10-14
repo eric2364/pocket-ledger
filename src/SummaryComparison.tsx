@@ -6,6 +6,7 @@ import {buildComparison,comparisonPeriods,incomeCategories} from './lib/comparis
 import {formatAccounting} from './lib/accounting';
 import {PeriodPicker} from './PeriodPicker';
 import {Button,Chip,useUI} from './ui';
+import {normalizeCategory} from './lib/categories';
 export function SummaryComparison({transactions,mode}:{transactions:Transaction[];mode:'year'|'salary'}){
  const {colors,ui}=useUI(),salary=mode==='salary';
  const reporting=transactions.filter(t=>!t.deletedAt).map(t=>t.reportingPeriod);
@@ -15,13 +16,13 @@ export function SummaryComparison({transactions,mode}:{transactions:Transaction[
  const [end,setEnd]=useState(salary?latestMonth:latestYear),[count,setCount]=useState(salary?9:5),[countOpen,setCountOpen]=useState(false);
  const categories=useMemo(()=>incomeCategories(transactions),[transactions]);
  const [selected,setSelected]=useState<string[]>(()=>incomeCategories(transactions).filter(c=>/salary|payroll|薪|工資/i.test(c)));
- const chosen=categories.filter(c=>selected.some(value=>value.toLocaleLowerCase()===c.toLocaleLowerCase()));
+ const chosen=categories.filter(c=>selected.some(value=>normalizeCategory(value)===normalizeCategory(c)));
  const periods=useMemo(()=>comparisonPeriods(end,count,salary?'month':'year'),[end,count,salary]);
  const comparison=useMemo(()=>buildComparison(transactions,periods,salary?chosen:undefined),[transactions,periods,salary,selected,categories]);
- const recordCount=(period:string)=>transactions.filter(t=>!t.deletedAt&&(salary?t.reportingPeriod===period:t.reportingPeriod.startsWith(period))&&(!salary||(t.kind==='income'&&chosen.some(c=>c.toLocaleLowerCase()===t.category.toLocaleLowerCase())))).length;
+ const recordCount=(period:string)=>transactions.filter(t=>!t.deletedAt&&(salary?t.reportingPeriod===period:t.reportingPeriod.startsWith(period))&&(!salary||(t.kind==='income'&&chosen.some(c=>normalizeCategory(c)===normalizeCategory(t.category))))).length;
  const maxCount=salary?36:10;
- function toggle(category:string){setSelected(rows=>rows.some(c=>c.toLocaleLowerCase()===category.toLocaleLowerCase())?rows.filter(c=>c.toLocaleLowerCase()!==category.toLocaleLowerCase()):[...rows,category]);}
- return <View style={{gap:16}}><Text style={ui.heading}>{salary?'Monthly salary comparison':'Yearly comparison'}</Text><Text style={ui.muted}>{salary?'Compare selected income categories side by side.':'Compare annual income, spending and net saving side by side.'} All amounts are HKD. Scroll the table sideways; row labels stay visible.</Text>
+ function toggle(category:string){setSelected(rows=>rows.some(c=>normalizeCategory(c)===normalizeCategory(category))?rows.filter(c=>normalizeCategory(c)!==normalizeCategory(category)):[...rows,category]);}
+ return <View style={{gap:16}}><Text style={ui.heading}>{salary?'Monthly salary comparison':'Yearly comparison'}</Text><Text style={ui.muted}>{salary?'Compare selected income categories side by side.':'Compare annual totals, income and annual/ad hoc items side by side. Annual item rows show their signed effect on net saving and are already included in the totals.'} All amounts are HKD. Scroll the table sideways; row labels stay visible.</Text>
  <PeriodPicker label={salary?'Last comparison month':'Last comparison year'} value={end} onChange={setEnd} periods={reporting} allowMonthly={salary} allowAnnual={!salary} allowAll={false}/>
  <View><Text style={ui.label}>Number of {salary?'months':'years'}</Text><Pressable accessibilityRole="button" accessibilityLabel={`Choose number of ${salary?'months':'years'}: ${count}`} onPress={()=>setCountOpen(true)} style={[ui.input,ui.row]}><Text style={ui.body}>{count} {salary?'months':'years'}</Text><Text style={{color:colors.green}}>▾</Text></Pressable></View>
  {salary&&<View style={ui.card}><Text style={ui.heading}>Income categories to compare</Text><Text style={ui.muted}>Salary categories are selected automatically when recognized. Tap categories to include or remove them.</Text><View style={ui.wrap}>{categories.map(c=><Chip key={c} title={c} active={chosen.includes(c)} onPress={()=>toggle(c)}/>)}</View>{!categories.length&&<Text style={ui.body}>There are no income categories in your current records.</Text>}{categories.length>0&&!chosen.length&&<Text style={ui.body}>Select at least one income category to show the monthly comparison.</Text>}</View>}

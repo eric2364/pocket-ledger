@@ -23,3 +23,11 @@ test('snapshot comparison distinguishes addition, edit, deletion and ignores syn
 test('invalid baselines, duplicate snapshots and invalid periods cannot report a match',()=>{
  assert.equal(reconcileMonth([],[baseline({incomeMinor:undefined})],'2026-09').status,'incomplete');assert.equal(reconcileMonth([],[baseline({netMinor:0})],'2026-09').status,'incomplete');assert.throws(()=>reconcileMonth([],[baseline(),baseline()],'2026-09'));assert.throws(()=>reconcileMonth([],[],'2026-13'));
 });
+
+test('canonical category casing does not create false baseline edits while a real category change does',()=>{
+ const old=[tx('canonical',100,{category:' food '})];
+ const records=[baseline({incomeMinor:0,expenseMinor:100,netMinor:-100,incomeCount:0,expenseCount:1,baselineTransactions:old})];
+ assert.deepEqual(reconcileMonth([tx('canonical',100,{category:'FOOD',originalCategory:' food '})],records,'2026-09').changes,{added:[],edited:[],deleted:[]});
+ assert.deepEqual(reconcileMonth([tx('canonical',100,{category:'TRANSPORT',originalCategory:' food '})],records,'2026-09').changes,{added:[],edited:['canonical'],deleted:[]});
+ assert.equal(old[0].category,' food ');
+});

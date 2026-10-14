@@ -1,4 +1,5 @@
 import { reportHkd } from './domain';
+import {normalizeCategory} from './categories';
 import type { ModuleRecord, Transaction } from './types';
 
 export type ReconciliationTotals = { incomeMinor:number; expenseMinor:number; netMinor:number; incomeCount:number; expenseCount:number; unconvertedCount:number };
@@ -16,7 +17,7 @@ export type MonthlyReconciliation = {
 const isMonthly=(tx:ReconciliationSnapshot,period:string)=>tx.reportingPeriod===period&&['income','expense'].includes(tx.kind);
 const safe=(value:unknown):value is number=>typeof value==='number'&&Number.isSafeInteger(value);
 const checked=(value:number)=>{if(!Number.isSafeInteger(value))throw new Error('Reconciliation exceeds safe money range');return value;};
-const fingerprint=(tx:ReconciliationSnapshot)=>JSON.stringify([tx.reportingPeriod,tx.kind,tx.currency,tx.amountMinor,tx.personalShareMinor,tx.hkdAmountMinor??null,tx.hkdPersonalShareMinor??null,tx.date??null,tx.category??null,tx.description??null,tx.account??null,tx.project??null,tx.notes??null]);
+const fingerprint=(tx:ReconciliationSnapshot)=>JSON.stringify([tx.reportingPeriod,tx.kind,tx.currency,tx.amountMinor,tx.personalShareMinor,tx.hkdAmountMinor??null,tx.hkdPersonalShareMinor??null,tx.date??null,tx.category===undefined?null:normalizeCategory(tx.category),tx.description??null,tx.account??null,tx.project??null,tx.notes??null]);
 
 /** Compare gross monthly workbook totals; personal share is reported separately.
  * Reporting period, rather than calendar date, is authoritative for migrated rows.

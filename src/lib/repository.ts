@@ -1,11 +1,12 @@
 import * as SQLite from 'expo-sqlite';
 import type {ImportPayload, ModuleRecord, RecurringTemplate, Transaction} from './types';
-import {validateTransaction} from './domain';
+import {validateTransaction,normalizeCategoryRecord} from './domain';
+import {normalizeCategories} from './categories';
 let database:Promise<SQLite.SQLiteDatabase>|undefined;
 const db=()=>database??=SQLite.openDatabaseAsync('wallet.db');
 export async function init(){ const d=await db();await d.execAsync(`PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, entity TEXT NOT NULL, payload TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0, state TEXT NOT NULL DEFAULT 'pending'); CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS conflicts (id TEXT PRIMARY KEY,record_id TEXT NOT NULL, local_payload TEXT NOT NULL,remote_payload TEXT NOT NULL,created_at TEXT NOT NULL);`); }
-async function list<T>(entity:string):Promise<T[]>{await init();const rows=await(await db()).getAllAsync<{payload:string,state:string,version:number}>('SELECT payload,state,version FROM records WHERE entity=?',entity);return rows.map(r=>({...JSON.parse(r.payload),syncStatus:r.state,version:r.version}));}
-async function save<T extends {id:string}>(entity:string,record:T,markPending=true){await init();await(await db()).runAsync(`INSERT INTO records(id,entity,payload,state) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,state=excluded.state`,record.id,entity,JSON.stringify(record),markPending?'pending':'synced');}
+async function list<T>(entity:string):Promise<T[]>{await init();const rows=await(await db()).getAllAsync<{payload:string,state:string,version:number}>('SELECT payload,state,version FROM records WHERE entity=?',entity);return rows.map(r=>{const item={...JSON.parse(r.payload),syncStatus:r.state,version:r.version};return (entity==='transaction'||entity==='template')&&typeof item.category==='string'?normalizeCategoryRecord(item):item;});}
+async function save<T extends {id:string}>(entity:string,record:T,markPending=true){if((entity==='transaction'||entity==='template')&&typeof (record as any).category==='string')record=normalizeCategoryRecord(record as any);await init();await(await db()).runAsync(`INSERT INTO records(id,entity,payload,state) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,state=excluded.state`,record.id,entity,JSON.stringify(record),markPending?'pending':'synced');}
 export async function listTransactions(){return (await list<Transaction>('transaction')).sort((a,b)=>(b.date??b.reportingPeriod).localeCompare(a.date??a.reportingPeriod));}
 export async function saveTransaction(tx:Transaction){validateTransaction(tx);await save('transaction',{...tx,updatedAt:new Date().toISOString(),syncStatus:'pending'});}
 export async function deleteTransaction(id:string){const tx=(await listTransactions()).find(x=>x.id===id);if(tx)await saveTransaction({...tx,deletedAt:new Date().toISOString()});}
@@ -21,7 +22,7 @@ export const deleteModule=(id:string)=>softDelete('module',id);
 export const deleteTemplate=(id:string)=>softDelete('template',id);
 export const getReviewItems=()=>list<Record<string,unknown>>('review');
 export const getHistoricalSummaries=()=>list<Record<string,unknown>>('historical');
-export const getCategories=async()=> (await list<{id:string;name:string}>('category')).map(x=>x.name);
+export const getCategories=async()=> normalizeCategories((await list<{id:string;name:string}>('category')).map(x=>x.name));
 export async function importData(payload:ImportPayload){
  const {validateImport}=await import('./backup');validateImport(payload);
   const marker='import:'+payload.source.sha256;if(await getSetting(marker))return {imported:0,alreadyImported:true};
@@ -64,7 +65,7 @@ export async function restoreBackup(payload:import('./types').WalletBackup){
     for(const item of payload.conflicts)await tx.runAsync('INSERT OR IGNORE INTO conflicts(id,record_id,local_payload,remote_payload,created_at) VALUES(?,?,?,?,?)',item.id,item.record_id,item.local_payload,item.remote_payload,item.created_at);
   });return {restored,skipped};
 }
-export async function saveTransactionBundle(item:Transaction,modules:ModuleRecord[]=[],templates:RecurringTemplate[]=[]){validateTransaction(item);await init();const updated={...item,updatedAt:new Date().toISOString(),syncStatus:'pending'};await(await db()).withExclusiveTransactionAsync(async tx=>{for(const [entity,record] of [['transaction',updated],...modules.map(m=>['module',m]),...templates.map(t=>['template',t])] as [string,{id:string}][])await tx.runAsync('INSERT INTO records(id,entity,payload,state) VALUES(?,?,?,\'pending\') ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,state=\'pending\'',record.id,entity,JSON.stringify(record));});}
+export async function saveTransactionBundle(item:Transaction,modules:ModuleRecord[]=[],templates:RecurringTemplate[]=[]){validateTransaction(item);await init();const updated={...item,updatedAt:new Date().toISOString(),syncStatus:'pending'};await(await db()).withExclusiveTransactionAsync(async tx=>{for(const [entity,record] of [['transaction',updated],...modules.map(m=>['module',m]),...templates.map(t=>['template',t])] as [string,{id:string}][])await tx.runAsync('INSERT INTO records(id,entity,payload,state) VALUES(?,?,?,\'pending\') ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,state=\'pending\'',record.id,entity,JSON.stringify((entity==='transaction'||entity==='template')?normalizeCategoryRecord(record as any):record));});}
 export async function acceptRemoteBatch(records:{id:string;entity:string;payload:unknown;version:number}[]){
  await init();await(await db()).withExclusiveTransactionAsync(async tx=>{
   for(const record of records){const local=await tx.getFirstAsync<{state:string;version:number}>('SELECT state,version FROM records WHERE id=?',record.id);if(local&&(local.state!=='synced'||local.version>record.version))continue;await tx.runAsync('INSERT INTO records(id,entity,payload,version,state) VALUES(?,?,?,?,\'synced\') ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,version=excluded.version,state=excluded.state',record.id,record.entity,JSON.stringify(record.payload),record.version);}

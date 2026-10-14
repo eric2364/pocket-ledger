@@ -1,4 +1,10 @@
 import type { Transaction } from './types';
+import {normalizeCategory} from './categories';
+/** Canonical category for use/editing; retain the exact source spelling. */
+export function normalizeCategoryRecord<T extends {category:string;originalCategory?:string}>(record:T):T{
+ const category=normalizeCategory(record.category);
+ return category===record.category?record:{...record,category,originalCategory:record.originalCategory??record.category};
+}
 export function currencyDecimals(currency: string): number { return ['JPY','KRW'].includes(currency.toUpperCase()) ? 0 : 2; }
 export function parseMoney(value:string, currency='HKD'):number {
   const scale=currencyDecimals(currency);
@@ -35,8 +41,8 @@ export function report(transactions:Transaction[],period?:string) {
   const totals:Record<string,{incomeMinor:number;expenseMinor:number;netMinor:number;categories:Record<string,number>}>= {};
   for(const tx of transactions){
     if(tx.deletedAt || (period&&!tx.reportingPeriod.startsWith(period)) || !['income','expense','adjustment'].includes(tx.kind)) continue;
-    const currency=tx.currency, bucket=totals[currency]??={incomeMinor:0,expenseMinor:0,netMinor:0,categories:{}};
-    if(tx.kind==='adjustment'&&tx.personalShareMinor<0){bucket.expenseMinor-=tx.personalShareMinor;bucket.categories[tx.category]=(bucket.categories[tx.category]??0)-tx.personalShareMinor;} else if(tx.kind==='income'||tx.kind==='adjustment'){bucket.incomeMinor+=tx.personalShareMinor;} else {bucket.expenseMinor+=tx.personalShareMinor;bucket.categories[tx.category]=(bucket.categories[tx.category]??0)+tx.personalShareMinor;}
+    const category=normalizeCategory(tx.category),currency=tx.currency, bucket=totals[currency]??={incomeMinor:0,expenseMinor:0,netMinor:0,categories:{}};
+    if(tx.kind==='adjustment'&&tx.personalShareMinor<0){bucket.expenseMinor-=tx.personalShareMinor;bucket.categories[category]=(bucket.categories[category]??0)-tx.personalShareMinor;} else if(tx.kind==='income'||tx.kind==='adjustment'){bucket.incomeMinor+=tx.personalShareMinor;} else {bucket.expenseMinor+=tx.personalShareMinor;bucket.categories[category]=(bucket.categories[category]??0)+tx.personalShareMinor;}
     bucket.netMinor=bucket.incomeMinor-bucket.expenseMinor;
     if(!Number.isSafeInteger(bucket.incomeMinor)||!Number.isSafeInteger(bucket.expenseMinor)||!Number.isSafeInteger(bucket.netMinor)) throw new Error('Report exceeds safe money range');
   }
@@ -53,7 +59,7 @@ export function rowsToCsv(rows:Record<string,unknown>[],columns?:string[]):strin
   return '\uFEFF'+[keys.map(csvCell).join(','),...rows.map(row=>keys.map(key=>csvCell(row[key])).join(','))].join('\r\n')+'\r\n';
 }
 export function exportTransactionsCsv(transactions:Transaction[]):string {
-  return rowsToCsv(transactions.map(tx=>({...tx, originalAmount:formatMoney(tx.amountMinor,tx.currency),personalShare:formatMoney(tx.personalShareMinor,tx.currency)})),['id','date','reportingPeriod','kind','category','originalCategory','description','account','amountMinor','originalAmount','currency','exchangeRate','hkdAmountMinor','hkdPersonalShareMinor','personalShareMinor','personalShare','project','notes','sourceSheet','sourceReference','createdAt','updatedAt','deletedAt']);
+  return rowsToCsv(transactions.map(raw=>{const tx=normalizeCategoryRecord(raw);return {...tx, originalAmount:formatMoney(tx.amountMinor,tx.currency),personalShare:formatMoney(tx.personalShareMinor,tx.currency)};}),['id','date','reportingPeriod','kind','category','originalCategory','description','account','amountMinor','originalAmount','currency','exchangeRate','hkdAmountMinor','hkdPersonalShareMinor','personalShareMinor','personalShare','project','notes','sourceSheet','sourceReference','createdAt','updatedAt','deletedAt']);
 }
 
 export function reportHkd(transactions:Transaction[],period?:string){

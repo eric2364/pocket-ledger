@@ -35,7 +35,7 @@ test('IndexedDB import, queue acknowledgement, conflict resolution and backup re
  // Empty-device restoration restores all original deleted records, categories and modules.
  const opened=await new Promise<IDBDatabase>((resolve,reject)=>{const req=indexedDB.open('wallet',1);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
  const clear=opened.transaction(['records','settings','conflicts'],'readwrite');for(const name of ['records','settings','conflicts'])clear.objectStore(name).clear();await new Promise<void>((resolve,reject)=>{clear.oncomplete=()=>resolve();clear.onerror=()=>reject(clear.error);});opened.close();
- assert.equal((await repo.restoreBackup(backup)).restored,backup.records.length);assert.ok((await repo.listTransactions())[0].deletedAt);assert.equal((await repo.getCategories())[0],'Food');
+ assert.equal((await repo.restoreBackup(backup)).restored,backup.records.length);assert.ok((await repo.listTransactions())[0].deletedAt);assert.equal((await repo.getCategories())[0],'FOOD');
  await assert.rejects(()=>repo.restoreBackup({...backup,records:[{...backup.records[0],payload:'invalid json'}]}));
  await repo.saveTransactionBundle(transaction({id:'bundle'}),[{id:'bundle-debt',type:'debt',title:'Friend',fields:{remainingMinor:6000}}],[{id:'bundle-template',title:'Lunch',kind:'expense',category:'Food',account:'Cash',currency:'HKD',amountMinor:12000,frequency:'monthly',nextDate:'2026-11-11'}]);assert.equal((await repo.listTemplates())[0].nextDate,'2026-11-11');assert.ok((await repo.listTransactions()).some(x=>x.id==='bundle'));assert.ok((await repo.getModules()).some(x=>x.id==='bundle-debt'));
 });

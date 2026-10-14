@@ -1,5 +1,6 @@
 import type {ImportPayload, ModuleRecord, RecurringTemplate, Transaction} from './types';
-import {validateTransaction} from './domain';
+import {validateTransaction,normalizeCategoryRecord} from './domain';
+import {normalizeCategories} from './categories';
 type RecordRow={id:string;entity:string;payload:string;version:number;state:string};
 let database:Promise<IDBDatabase>|undefined;
 function db(){return database??=new Promise<IDBDatabase>((resolve,reject)=>{const req=indexedDB.open('wallet',1);req.onupgradeneeded=()=>{req.result.createObjectStore('records',{keyPath:'id'});req.result.createObjectStore('settings');req.result.createObjectStore('conflicts',{keyPath:'id'});};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
@@ -7,8 +8,8 @@ const result=<T>(req:IDBRequest<T>)=>new Promise<T>((resolve,reject)=>{req.onsuc
 const done=(tx:IDBTransaction)=>new Promise<void>((resolve,reject)=>{tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error??new Error('Storage transaction aborted'));});
 async function all<T>(store:string):Promise<T[]>{return result((await db()).transaction(store).objectStore(store).getAll());}
 export async function init(){await db();if(navigator.storage?.persist)await navigator.storage.persist().catch(()=>false);}
-async function list<T>(entity:string):Promise<T[]>{return(await all<RecordRow>('records')).filter(x=>x.entity===entity).map(r=>({...JSON.parse(r.payload),syncStatus:r.state,version:r.version}));}
-async function save<T extends {id:string}>(entity:string,item:T){const tx=(await db()).transaction('records','readwrite'),finished=done(tx),store=tx.objectStore('records');const old=await result<RecordRow|undefined>(store.get(item.id));store.put({id:item.id,entity,payload:JSON.stringify(item),version:old?.version??0,state:'pending'});await finished;}
+async function list<T>(entity:string):Promise<T[]>{return(await all<RecordRow>('records')).filter(x=>x.entity===entity).map(r=>{const item={...JSON.parse(r.payload),syncStatus:r.state,version:r.version};return (entity==='transaction'||entity==='template')&&typeof item.category==='string'?normalizeCategoryRecord(item):item;});}
+async function save<T extends {id:string}>(entity:string,item:T){if((entity==='transaction'||entity==='template')&&typeof (item as any).category==='string')item=normalizeCategoryRecord(item as any);const tx=(await db()).transaction('records','readwrite'),finished=done(tx),store=tx.objectStore('records');const old=await result<RecordRow|undefined>(store.get(item.id));store.put({id:item.id,entity,payload:JSON.stringify(item),version:old?.version??0,state:'pending'});await finished;}
 export async function listTransactions(){return(await list<Transaction>('transaction')).sort((a,b)=>(b.date??b.reportingPeriod).localeCompare(a.date??a.reportingPeriod));}
 export async function saveTransaction(item:Transaction){validateTransaction(item);await save('transaction',{...item,updatedAt:new Date().toISOString(),syncStatus:'pending'});}
 export async function deleteTransaction(id:string){const item=(await listTransactions()).find(x=>x.id===id);if(item)await saveTransaction({...item,deletedAt:new Date().toISOString()});}
@@ -24,7 +25,7 @@ export const deleteModule=(id:string)=>softDelete('module',id);
 export const deleteTemplate=(id:string)=>softDelete('template',id);
 export const getReviewItems=()=>list<Record<string,unknown>>('review');
 export const getHistoricalSummaries=()=>list<Record<string,unknown>>('historical');
-export const getCategories=async()=> (await list<{id:string;name:string}>('category')).map(x=>x.name);
+export const getCategories=async()=> normalizeCategories((await list<{id:string;name:string}>('category')).map(x=>x.name));
 export async function importData(payload:ImportPayload){
  const {validateImport}=await import('./backup');validateImport(payload);
  for(const item of payload.transactions)validateTransaction(item);
@@ -64,7 +65,7 @@ export async function restoreBackup(payload:import('./types').WalletBackup){
  for(const item of payload.conflicts){const req=conflicts.get(item.id);req.onsuccess=()=>{if(!req.result)conflicts.put(item);};}
  await finished;return {restored,skipped};
 }
-export async function saveTransactionBundle(item:Transaction,modules:ModuleRecord[]=[],templates:RecurringTemplate[]=[]){validateTransaction(item);const tx=(await db()).transaction('records','readwrite'),finished=done(tx),store=tx.objectStore('records'),updated={...item,updatedAt:new Date().toISOString(),syncStatus:'pending'};for(const [entity,record] of [['transaction',updated],...modules.map(m=>['module',m]),...templates.map(t=>['template',t])] as [string,{id:string}][]){const req=store.get(record.id);req.onsuccess=()=>store.put({id:record.id,entity,payload:JSON.stringify(record),version:req.result?.version??0,state:'pending'});}await finished;}
+export async function saveTransactionBundle(item:Transaction,modules:ModuleRecord[]=[],templates:RecurringTemplate[]=[]){validateTransaction(item);const tx=(await db()).transaction('records','readwrite'),finished=done(tx),store=tx.objectStore('records'),updated={...item,updatedAt:new Date().toISOString(),syncStatus:'pending'};for(const [entity,record] of [['transaction',updated],...modules.map(m=>['module',m]),...templates.map(t=>['template',t])] as [string,{id:string}][]){const req=store.get(record.id);req.onsuccess=()=>store.put({id:record.id,entity,payload:JSON.stringify((entity==='transaction'||entity==='template')?normalizeCategoryRecord(record as any):record),version:req.result?.version??0,state:'pending'});}await finished;}
 export async function acceptRemoteBatch(records:{id:string;entity:string;payload:unknown;version:number}[]){
  const tx=(await db()).transaction('records','readwrite'),finished=done(tx),store=tx.objectStore('records');
  for(const record of records){const req=store.get(record.id);req.onsuccess=()=>{if(!req.result||(req.result.state==='synced'&&record.version>=req.result.version))store.put({...record,payload:JSON.stringify(record.payload),state:'synced'});};}
