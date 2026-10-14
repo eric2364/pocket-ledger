@@ -1,6 +1,6 @@
 # Protected summary and reconciliation
 
-Open Summary in the signed-in app and create a password of at least ten characters. Enter it only in the app. The password is kept in browser memory for the current unlocked visit; it is not written to IndexedDB, source, GitHub or application logs. Setup encrypts stored summary records with AES-GCM and PBKDF2; the server enforces protection for summary data, backups and original archive downloads. The Supabase Edge Function performs encryption using Web Crypto; no administrative credential is sent to the phone.
+Open Summary in the signed-in app and create any non-empty password, with no length or character rules. Enter it only in the app. The password is kept in browser memory for the current unlocked visit; it is not written to IndexedDB, source, GitHub or application logs. Setup encrypts stored summary records with AES-GCM and PBKDF2; the server enforces protection for summary data, backups and original archive downloads. The Supabase Edge Function performs encryption using Web Crypto; no administrative credential is sent to the phone.
 
 Summary automatically locks when leaving the tab, backgrounding the app, hiding the browser or after five minutes. An online connection is required to unlock it. Ordinary transaction entry and its offline storage remain separate. Summary source snapshots are read-only, and updated mobile entries drive current reports.
 

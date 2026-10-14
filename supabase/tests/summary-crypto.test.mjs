@@ -27,8 +27,22 @@ test('generic record redaction never contains baseline or protected review detai
  const ordinary={id:'tx',entity:'transaction',payload:{id:'tx',description:'daily entry'}};
  assert(!isProtected(ordinary));assert.deepEqual(lockedRecord(ordinary),ordinary);
 });
-test('short and malformed setup passwords rejected',async()=>{
- await assert.rejects(createSummaryConfig('short'));
- await assert.rejects(createSummaryConfig(null));
- await assert.rejects(createSummaryConfig('x'.repeat(1025)));
+test('only empty or non-string Summary passwords are rejected',async()=>{
+ for(const value of ['',null,undefined,1234]){await assert.rejects(createSummaryConfig(value));}
+ const {config}=await createSummaryConfig('valid');
+ for(const value of ['',null,undefined,1234]){await assert.rejects(summaryKey(config,value));}
+});
+test('single-character, numeric, Unicode, spaces and long passwords set up and unlock unchanged',async()=>{
+ for(const password of ['a','1234','密碼🔐',' ',' spaces stay exact ','x'.repeat(2048)]){
+  const {key,config}=await createSummaryConfig(password);
+  const encrypted=await encryptRecord(baseline,key);
+  assert.deepEqual((await decryptRecord(encrypted,await summaryKey(config,password))).payload,baseline.payload);
+ }
+});
+test('existing encrypted configuration and records remain compatible',async()=>{
+ // Synthetic fixture encrypted before removing password length restrictions.
+ const config={version:1,salt:'0KDOGS6MbBJlNAihG69l+Q==',iterations:100000,verifier:{iv:'M6Du+vIHXuuUDtOy',ciphertext:'OYbf6ag3210DRAYTvLubUUIZrRzHXKTJidodieMtzv8p08F4t0lFUQ=='}};
+ const record={id:'legacy-synthetic',entity:'historical',version:2,payload:{encryptedSummary:1,type:'historical',iv:'AoPhEPNu9Ll5SA9l',ciphertext:'NPL38mvWdA5YaYQRgQtr+rwqO/NPAvIvPbdDfIAneW5z4Fr8bs3fPIw+hx4QxyqR1N96qDv+4G9MQwmKBVWZJJPcbFQhOstF6lVZpeDoDw=='}};
+ assert.deepEqual((await decryptRecord(record,await summaryKey(config,'Legacy-synthetic-password'))).payload,{id:'legacy-synthetic',description:'legacy synthetic data'});
+ await assert.rejects(summaryKey(config,'different'));
 });

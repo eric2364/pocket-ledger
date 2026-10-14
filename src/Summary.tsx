@@ -3,13 +3,14 @@ import {ScrollView,Text,View} from 'react-native';
 import type {ModuleRecord,Transaction} from './lib/types';
 import {formatMoney,reportHkd,rowsToCsv} from './lib/domain';
 import {reconcileMonth} from './lib/reconciliation';
-import {Button,Chip,ui,colors} from './ui';
+import {Button,Chip,useUI} from './ui';
 import {shareFile} from './files';
 import {PeriodPicker} from './PeriodPicker';
 import {strToU8} from 'fflate';
 const money=(n:number)=>`HKD ${formatMoney(n)}`;
 const display=(v:unknown)=>v===null||v===undefined?'':typeof v==='object'?JSON.stringify(v):String(v);
 export function Summary({transactions,records,historical,reviews,onLock,extra}:{transactions:Transaction[];records:ModuleRecord[];historical:Record<string,unknown>[];reviews:Record<string,unknown>[];onLock:()=>void;extra?:React.ReactNode}){
+ const {colors,ui}=useUI();
  const years=[...new Set([...transactions.map(t=>t.reportingPeriod.slice(0,4)),...historical.map(h=>String(h.year||''))])].filter(y=>/^\d{4}$/.test(y)).sort().reverse();
  const septembers=records.filter(r=>r.type==='reconciliation'&&String(r.fields.period).endsWith('-09')).map(r=>String(r.fields.period)).sort().reverse();
  const [year,setYear]=useState(years[0]||String(new Date().getFullYear())),[month,setMonth]=useState(septembers[0]||`${years[0]||new Date().getFullYear()}-09`),[detail,setDetail]=useState(''),[limit,setLimit]=useState(30),[err,setErr]=useState('');

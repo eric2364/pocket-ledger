@@ -2,8 +2,9 @@ import React,{useState} from 'react';
 import {Modal,Pressable,ScrollView,Text,View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {availablePeriods,monthNames,periodLabel,periodYears,shiftReportMonth} from './lib/periods';
-import {Button,Chip,colors,ui} from './ui';
+import {Button,Chip,useUI} from './ui';
 export function PeriodPicker({value,onChange,periods,label='Report period',allowMonthly=true,allowAnnual=true,allowAll=true}:{value:string;onChange:(value:string)=>void;periods:string[];label?:string;allowMonthly?:boolean;allowAnnual?:boolean;allowAll?:boolean}){
+ const {colors,ui}=useUI();
  const now=new Date(),current=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
  const options=availablePeriods(periods,current,value),years=periodYears(options);
  const [open,setOpen]=useState(false),[year,setYear]=useState(value.slice(0,4)||current.slice(0,4));
