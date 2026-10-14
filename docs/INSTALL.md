@@ -3,9 +3,10 @@
 1. Open [Pocket Ledger](https://eric2364.github.io/pocket-ledger/) in **Safari**.
 2. Sign in using the same Supabase email and password as your weight-check app. ChatGPT sign-in is unnecessary. Each app stores its records separately.
 3. Tap **Share → Add to Home Screen → Add**.
-4. Open the new icon while online and wait for **Synced** before checking your existing records.
+4. Open the new icon while online and wait for **Saved to cloud** before checking your existing records.
 5. Add a transaction once. Reports update automatically; use **History → Export CSV** when you need Excel-compatible data.
-6. Open **Summary**, create its separate password if prompted, and unlock annual summaries, monthly reconciliation and original-file downloads.
+6. Use **Settings → Quick add** to choose up to ten shortcuts. Entry dates use a calendar picker.
+7. Open **Summary**, create its separate password if prompted, and unlock yearly summaries and original-file downloads.
 
 GitHub Pages serves public application code. Personal records are stored in a private Supabase database and private file bucket, protected by authentication and ownership policies. No financial records, workbooks or credentials belong in the repository or static website files.
 
@@ -13,7 +14,7 @@ The app keeps records on your phone for offline entry after an initial online la
 
 ## Check on your phone
 
-- Wait for **Synced**, find an existing transaction and inspect September reconciliation in Summary.
+- Wait for **Saved to cloud**, find an existing transaction and choose a year in Summary.
 - Add an invented expense, close and reopen the app, and confirm it appears once.
 - Try an offline entry, reconnect and check synchronization.
 - Export CSV and a complete backup to Files, then delete the invented entry.
