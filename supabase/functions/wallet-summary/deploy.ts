@@ -21,9 +21,18 @@ function cloudBackup(records,archives=[],createdAt=new Date().toISOString()){
  return {backupVersion:1,createdAt,records:records.map(row=>({...row,payload:JSON.stringify(row.payload),state:'synced'})),settings:[],conflicts:[],archives};
 }
 
+// PostgREST can apply a project limit below the requested range. Advance by
+// rows actually returned and stop only on empty, so setup cannot truncate data.
+async function readAllPages(fetchPage,pageSize=1000){
+ const rows=[];let offset=0;
+ while(true){const page=await fetchPage(offset,offset+pageSize-1);if(!Array.isArray(page))throw new Error('Invalid wallet page');if(page.length===0)return rows;rows.push(...page);offset+=page.length;}
+}
+
 const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info','Access-Control-Allow-Methods':'POST,OPTIONS','Cache-Control':'no-store'};
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...cors,'Content-Type':'application/json'}});
-const apiFail=(message:string,status=400)=>Object.assign(new Error(message),{status});
+const apiFail=(message:string,status=400,code='summary_request_failed')=>Object.assign(new Error(message),{status,code});
+// Only static stages and SQLSTATE are logged; no record content or credentials.
+function backendFailure(stage:string,error:{code?:string}){console.error(JSON.stringify({service:'wallet-summary',stage,sqlstate:typeof error.code==='string'&&/^[A-Z0-9]{5}$/.test(error.code)?error.code:'unavailable'}));}
 Deno.serve(async(request:Request)=>{
  if(request.method==='OPTIONS')return new Response(null,{headers:cors});
  if(request.method!=='POST')return json({error:'POST required'},405);
@@ -40,9 +49,9 @@ Deno.serve(async(request:Request)=>{
   if(allowedOwner&&owner!==allowedOwner)throw apiFail('This wallet belongs to another account',403);
   const body=await request.json();
   const {data:security,error:securityError}=await admin.from('wallet_summary_security').select('config').eq('user_id',owner).maybeSingle();
-  if(securityError)throw apiFail('Summary service unavailable',503);
+  if(securityError){backendFailure('security_read',securityError);throw apiFail('Summary service unavailable. Please try again later.',503,'summary_security_read_failed');}
   if(body.action==='status')return json({configured:!!security});
-  async function records(){const rows:any[]=[];for(let offset=0;;offset+=1000){const {data,error}=await admin.from('wallet_records').select('id,entity,payload,version,updated_at').eq('user_id',owner).order('id').range(offset,offset+999);if(error)throw apiFail('Could not read wallet',503);rows.push(...data);if(data.length<1000)break;}return rows;}
+  async function records(){return readAllPages(async(start:number,end:number)=>{const {data,error}=await admin.from('wallet_records').select('id,entity,payload,version,updated_at').eq('user_id',owner).order('id').range(start,end);if(error){backendFailure('records_read',error);throw apiFail('Could not read wallet. Please try again later.',503,'summary_records_read_failed');}return data;});}
   async function archives(){const {data,error}=await admin.storage.from('wallet-private').list(owner,{limit:1000});if(error)throw apiFail('Could not list original files',503);return (data??[]).filter(item=>item.id).map(item=>({name:item.name,size:item.metadata?.size,uploaded:item.created_at}));}
   if(body.action==='archives')return json({archives:await archives()});
   if(body.action==='setup'){
@@ -52,7 +61,7 @@ Deno.serve(async(request:Request)=>{
    const protectedRows=(await records()).filter(isProtected);
    const encrypted=[];for(const row of protectedRows)encrypted.push(await encryptRecord(row,key));
    const {error}=await admin.rpc('wallet_setup_summary',{p_user_id:owner,p_config:config,p_records:encrypted});
-   if(error)throw apiFail('Summary changed or password already configured. Refresh and try again.',409);
+   if(error){backendFailure('setup_commit',error);if(error.code==='P0001')throw apiFail('Summary changed or password already configured. Refresh and try again.',409,'summary_setup_conflict');throw apiFail('Could not save Summary password. Your records were not changed. Please try again later.',503,'summary_setup_save_failed');}
    return json({configured:true,records:protectedRows.map(row=>({...row,version:row.version+1}))});
   }
   if(!['unlock','backup','archive'].includes(body.action))throw apiFail('Unknown Summary action');
@@ -70,5 +79,5 @@ Deno.serve(async(request:Request)=>{
   }
   const output=[];for(const row of await records())if(isProtected(row))output.push(await decryptRecord(row,key));else if(body.action==='backup')output.push(row);
   return json(body.action==='backup'?cloudBackup(output,await archives()):{configured:true,records:output});
- }catch(error){const problem=error as Error&{status?:number};return json({error:problem.status?problem.message:'Summary request failed'},problem.status??500);}
+ }catch(error){const problem=error as Error&{status?:number;code?:string};if(!problem.status)backendFailure('unexpected',{code:undefined});return json({error:problem.status?problem.message:'Summary request failed. Please try again later.',code:problem.code??'summary_unexpected'},problem.status??500);}
 });

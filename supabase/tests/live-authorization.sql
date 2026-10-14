@@ -52,6 +52,10 @@ end $$;
 reset role;
 do $$
 begin
+ if not has_table_privilege('service_role','public.wallet_records','SELECT') then raise exception 'FAIL: server cannot read owned wallet records'; end if;
+ if not has_table_privilege('service_role','public.wallet_summary_security','SELECT') then raise exception 'FAIL: server cannot read Summary configuration'; end if;
+ if not has_column_privilege('service_role','public.wallet_summary_security','failed_attempts','UPDATE') or not has_column_privilege('service_role','public.wallet_summary_security','locked_until','UPDATE') then raise exception 'FAIL: server cannot reset verified password attempts'; end if;
+ if has_table_privilege('authenticated','public.wallet_summary_security','SELECT') or has_table_privilege('anon','public.wallet_summary_security','SELECT') then raise exception 'FAIL: browser client can read Summary configuration'; end if;
  if has_function_privilege('anon','public.save_wallet_record(text,text,jsonb,bigint)','execute') then raise exception 'FAIL: anonymous ordinary writes allowed'; end if;
  if has_function_privilege('authenticated','public.wallet_setup_summary(uuid,jsonb,jsonb)','execute') then raise exception 'FAIL: client can bypass password setup'; end if;
  if has_function_privilege('authenticated','public.wallet_summary_attempt(uuid)','execute') then raise exception 'FAIL: client can tamper with password attempt counter'; end if;
