@@ -1,0 +1,38 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import 'fake-indexeddb/auto';
+import {repository,acceptRemoteBatch,acknowledge,pendingRecords} from '../src/lib/repository.web';
+import {exportLedgerCsv,parseCsv,importTransactionsCsv} from '../src/lib/csv';
+import {synchronize} from '../src/lib/syncEngine';
+import type {Transaction,TransactionKind} from '../src/lib/types';
+const kinds:TransactionKind[]=['expense','income','transfer','card_payment','investment','adjustment'];
+const make=(kind:TransactionKind):Transaction=>({id:`csv-flow:${kind}`,kind,date:'2026-10-15',reportingPeriod:'2026-10',category:'OTHER',description:'Mobile entry, with "quotes"\nand a newline',account:'Cash',currency:'HKD',amountMinor:12345,personalShareMinor:12345,createdAt:'2026-10-15T00:00:00Z',updatedAt:'2026-10-15T00:00:00Z'});
+test('mobile writes, edits, tombstones and synced records all reach the canonical spreadsheet CSV',async()=>{
+ for(const kind of kinds)await repository.saveTransaction(make(kind));
+ await repository.saveTransaction({...make('expense'),description:'Edited on phone',amountMinor:999,personalShareMinor:999});
+ await repository.deleteTransaction(make('income').id);
+ await repository.saveTransactionBundle({...make('transfer'),date:null,reportingPeriod:'2026'},[{id:'csv-flow:debt',type:'debt',title:'Shared purchase',fields:{amountMinor:100,remainingMinor:100}}],[{id:'csv-flow:template',title:'Monthly entry',kind:'expense',category:'OTHER',account:'Cash',currency:'HKD',amountMinor:100,frequency:'monthly',nextDate:'2026-11-15'}]);
+ await repository.deleteModule('csv-flow:debt');
+ const uploaded:string[]=[];
+ const cloudTx={...make('investment'),id:'csv-flow:other-device',amountMinor:4321,personalShareMinor:4321};
+ const result=await synchronize({pending:pendingRecords,protected:()=>false,save:async row=>{uploaded.push(row.id);return {status:'saved',version:1};},acknowledge,preserveConflict:async()=>{},conflicts:repository.getConflicts,fetchPage:async start=>start===0?[{id:cloudTx.id,entity:'transaction',payload:cloudTx,version:2}]:[],acceptRemote:acceptRemoteBatch});
+ assert.equal(result.pending,0);
+ for(const kind of kinds)assert(uploaded.includes(make(kind).id));
+ const csv=exportLedgerCsv(await repository.exportBackup()),rows=parseCsv(csv),txs=importTransactionsCsv(csv);
+ assert.equal(txs.length,7);
+ assert.deepEqual(new Set(txs.map(t=>t.kind)),new Set(kinds));
+ assert.equal(txs.find(t=>t.kind==='expense')?.amountMinor,999);
+ assert.equal(txs.find(t=>t.kind==='expense')?.description,'Edited on phone');
+ assert(txs.find(t=>t.kind==='income')?.deletedAt);
+ assert.equal(txs.find(t=>t.kind==='transfer')?.date,null);
+ assert.equal(txs.find(t=>t.kind==='transfer')?.reportingPeriod,'2026');
+ assert.equal(txs.find(t=>t.id===cloudTx.id)?.amountMinor,4321);
+ assert.equal(rows.find(r=>r.id===cloudTx.id)?.recordVersion,'2');
+ assert.equal(rows.find(r=>r.id===cloudTx.id)?.recordState,'synced');
+ assert(rows.find(r=>r.id==='csv-flow:debt')?.deletedAt);
+ assert.equal(rows.find(r=>r.id==='csv-flow:template')?.recordType,'template');
+ // Restoring a deleted entry must clear the tombstone on the next complete snapshot.
+ await repository.restoreTransaction(make('income').id);
+ const restored=importTransactionsCsv(exportLedgerCsv(await repository.exportBackup())).find(t=>t.kind==='income');
+ assert.equal(restored?.deletedAt,undefined);
+});

@@ -14,3 +14,12 @@ export function summaryExpiresAt(){return expiresAt;}
 export function summaryHeaders():Record<string,string>{if(!summaryUnlocked())throw new Error('Unlock Summary before downloading files containing personal summary information.');return {'x-summary-password':passwordInMemory!};}
 
 export function summaryPasswordValue(){if(!summaryUnlocked())throw new Error('Unlock Summary before downloading personal files.');return passwordInMemory!;}
+
+/** Refresh decrypted records without extending the existing unlock session. */
+export async function refreshUnlockedSummary():Promise<{records:SummaryCloudRecord[]}>{
+ if(!summaryUnlocked())throw new Error('Unlock Summary before exporting your spreadsheet.');
+ const generation=accessGeneration;
+ const result=await call('unlock',{password:passwordInMemory!});
+ if(generation!==accessGeneration||!summaryUnlocked())throw new Error('Summary was locked. Unlock again before exporting.');
+ return result;
+}
